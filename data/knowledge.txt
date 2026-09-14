@@ -1,0 +1,9 @@
+Artificial intelligence is a field of computer science.
+
+Machine learning is a subfield of artificial intelligence.
+
+Deep learning is a subfield of machine learning.
+
+Neural networks are used in deep learning.
+
+Mountains are the hilly areas of northern region.
