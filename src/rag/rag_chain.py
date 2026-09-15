@@ -32,7 +32,8 @@ embeddings = HuggingFaceEmbeddings(
 # Connect directly to the existing Chroma vector database on disk
 vectorstore = Chroma(
     persist_directory=str(PERSIST_DIR),
-    embedding_function=embeddings
+    embedding_function=embeddings,
+     collection_name="langchain"
 )
 
 doc_count = vectorstore._collection.count()
@@ -81,7 +82,7 @@ Answer:
 # ==========================================================
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
+    model="gemini-3.8-flash",
     google_api_key=os.getenv("GEMINI_API_KEY")
 )
 
