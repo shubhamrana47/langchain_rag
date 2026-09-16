@@ -27,10 +27,10 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent
 FILE_PATH = PROJECT_ROOT / "data" / "pdfsamplefortesting.pdf"
 
 # Chroma persistent storage
-PERSIST_DIR = PROJECT_ROOT / "storage" / "chroma_history_huggingface"
+PERSIST_DIR = PROJECT_ROOT / "storage" / "pdf_chroma"
 
 # Chroma collection name
-COLLECTION_NAME = "langchain"
+COLLECTION_NAME = "pdf_documents"
 
 
 # ============================================================
@@ -173,7 +173,7 @@ from the image.
 
     # Send image + prompt to Gemini Vision
     response = client.models.generate_content(
-        model="gemini-flash-latest",
+        model="gemini-3.5-flash",
         contents=[
             image_part,
             prompt

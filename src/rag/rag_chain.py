@@ -1,69 +1,97 @@
-import os
-import sys
 from pathlib import Path
+import os
+
 from dotenv import load_dotenv
-
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain_core.prompts import PromptTemplate
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
 
 
-# ==========================================================
-# PATH CONFIGURATION & ENVIRONMENT VARIABLES
-# ==========================================================
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent.parent
-PERSIST_DIR = PROJECT_ROOT / "storage" / "chroma_history_huggingface"
-
-load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv()
 
 
-# ==========================================================
-# 1. LOAD EMBEDDINGS & CONNECT TO STORED CHROMA DB
-# ==========================================================
+# --------------------------------------------------
+# 1. Project path
+# --------------------------------------------------
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+# --------------------------------------------------
+# 2. Embedding model
+# --------------------------------------------------
 
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# Connect directly to the existing Chroma vector database on disk
+
+# --------------------------------------------------
+# 3. Connect to Chroma
+# --------------------------------------------------
+
 vectorstore = Chroma(
-    persist_directory=str(PERSIST_DIR),
-    embedding_function=embeddings,
-     collection_name="langchain"
+    persist_directory=str(
+        BASE_DIR / "storage" / "chroma_history_huggingface"
+    ),
+    collection_name="langchain",
+    embedding_function=embeddings
 )
 
-doc_count = vectorstore._collection.count()
-if doc_count == 0:
-    print(f"Error: Vector DB at {PERSIST_DIR} is empty.")
-    print("Please run 'python src/rag/ingest.py' to index your documents first.")
-    sys.exit(1)
 
-print(f"Connected to Chroma DB ({doc_count} chunks available).")
+# --------------------------------------------------
+# 4. Chroma Debug
+# --------------------------------------------------
+
+print("\n--- CHROMA DEBUG ---")
+
+print(
+    "Database path:",
+    BASE_DIR / "storage" / "chroma_history_huggingface"
+)
+
+print(
+    "Collection:",
+    vectorstore._collection.name
+)
+
+print(
+    "Total records:",
+    vectorstore._collection.count()
+)
 
 
-# ==========================================================
-# 2. CREATE RETRIEVER
-# ==========================================================
+# --------------------------------------------------
+# 5. Create retriever
+# --------------------------------------------------
 
 retriever = vectorstore.as_retriever(
-    search_kwargs={"k": 2}
+    search_kwargs={"k": 3}
 )
 
 
-# ==========================================================
-# 3. CREATE PROMPT TEMPLATE
-# ==========================================================
+# --------------------------------------------------
+# 6. Gemini LLM
+# --------------------------------------------------
 
-prompt = PromptTemplate(
-    input_variables=["context", "question"],
-    template="""
-Answer the question using only the information provided in the context.
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.6-flash",
+    google_api_key=os.getenv("GEMINI_API_KEY")
+)
 
-If the answer is not present in the context, say:
+
+# --------------------------------------------------
+# 7. Prompt
+# --------------------------------------------------
+
+prompt = ChatPromptTemplate.from_template(
+    """
+You are a helpful assistant answering questions about a PDF document.
+
+Use the provided context to answer the user's question.
+
+If the answer is not available in the context, say:
 "I don't have enough information in the provided document."
 
 Context:
@@ -77,70 +105,62 @@ Answer:
 )
 
 
-# ==========================================================
-# 4. CREATE GEMINI LLM
-# ==========================================================
+# --------------------------------------------------
+# 8. RAG function
+# --------------------------------------------------
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.8-flash",
-    google_api_key=os.getenv("GEMINI_API_KEY")
-)
+def rag_chain(question):
 
+    # Retrieve relevant PDF chunks
+    documents = retriever.invoke(question)
 
-# ==========================================================
-# 5. GET USER QUESTION
-# ==========================================================
+    print("\n--- RETRIEVED DOCUMENTS ---")
 
-if len(sys.argv) > 1:
-    question = " ".join(sys.argv[1:])
-    print(f"\nEnter your question: {question}")
-else:
-    try:
-        question = input("\nEnter your question: ")
-    except EOFError:
-        question = "What is the subject of this book?"
+    for i, document in enumerate(documents):
+
+        print(f"\nDocument {i + 1}:")
+
+        print("CONTENT:")
+        print(document.page_content)
+
+        print("METADATA:")
+        print(document.metadata)
 
 
-# ==========================================================
-# 6. RETRIEVE RELEVANT DOCUMENTS FROM DB
-# ==========================================================
-
-results = retriever.invoke(question)
-
-
-# ==========================================================
-# 7. CREATE CONTEXT
-# ==========================================================
-
-context = "\n\n".join(
-    document.page_content
-    for document in results
-)
+    # Combine chunks into context
+    context = "\n\n".join(
+        document.page_content
+        for document in documents
+    )
 
 
-# ==========================================================
-# 8. CREATE FINAL PROMPT
-# ==========================================================
+    print("\n--- CONTEXT ---")
+    print(context)
 
-final_prompt = prompt.invoke(
-    {
+
+    # Create final prompt
+    final_prompt = prompt.invoke({
         "context": context,
         "question": question
-    }
-)
+    })
 
 
-# ==========================================================
-# 9. SEND PROMPT TO GEMINI
-# ==========================================================
-
-response = llm.invoke(final_prompt)
+    # Send prompt to Gemini
+    response = llm.invoke(final_prompt)
 
 
-# ==========================================================
-# 10. PRINT ANSWER
-# ==========================================================
+    return response.text
 
-print("\nAnswer:")
-answer = response.text if hasattr(response, "text") and response.text else response.content
-print(answer)
+
+# --------------------------------------------------
+# 9. Run
+# --------------------------------------------------
+
+if __name__ == "__main__":
+
+    question = input("Ask a question: ")
+
+    answer = rag_chain(question)
+
+    print("\nAnswer:")
+    print(answer)
